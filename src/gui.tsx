@@ -71,6 +71,17 @@ const css = `
 .wm-row-desc {
   opacity: 0.6;
 }
+.wm-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.7;
+  border: 1px solid currentColor;
+  vertical-align: middle;
+}
 `
 
 export default Plugin.define({

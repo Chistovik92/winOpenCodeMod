@@ -22,6 +22,34 @@ const providerSchema = {
   required: ["id", "name", "baseURL", "models"],
 }
 
+const externalProviderSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    kind: { type: "string", enum: ["custom", "builtin"] },
+    package: { type: "string" },
+    baseURL: { type: "string" },
+    apiKey: { type: "string" },
+    headers: { type: "object", additionalProperties: { type: "string" } },
+    modelCount: { type: "number" },
+    overridden: { type: "boolean" },
+  },
+  required: ["id", "name", "kind", "package", "modelCount", "overridden"],
+}
+
+const overrideSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+    baseURL: { type: "string" },
+    apiKey: { type: "string" },
+    headers: { type: "object", additionalProperties: { type: "string" } },
+  },
+  required: ["id"],
+}
+
 const emptySchema = {
   type: "object",
   properties: {},
@@ -43,9 +71,10 @@ export const ProviderRpc = {
         type: "object",
         properties: {
           providers: { type: "array", items: providerSchema },
+          externalProviders: { type: "array", items: externalProviderSchema },
           existingProviderIDs: { type: "array", items: { type: "string" } },
         },
-        required: ["providers", "existingProviderIDs"],
+        required: ["providers", "externalProviders", "existingProviderIDs"],
       },
     },
     save: {
@@ -53,6 +82,18 @@ export const ProviderRpc = {
       output: emptySchema,
     },
     remove: {
+      input: {
+        type: "object",
+        properties: { id: { type: "string" } },
+        required: ["id"],
+      },
+      output: emptySchema,
+    },
+    saveOverride: {
+      input: overrideSchema,
+      output: emptySchema,
+    },
+    removeOverride: {
       input: {
         type: "object",
         properties: { id: { type: "string" } },
