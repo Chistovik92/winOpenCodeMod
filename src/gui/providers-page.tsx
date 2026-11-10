@@ -1,7 +1,7 @@
 import { usePlugin } from "@opencode/plugin/gui"
-import { For, Show, createResource } from "solid-js"
+import { For, Show, createResource, createSignal } from "solid-js"
 import { ProviderRpc } from "../rpc"
-import type { ExternalProvider, ProviderListResult, StoredProvider } from "../types"
+import type { ExternalProvider, ImportResult, ProviderListResult, StoredProvider } from "../types"
 import { ExternalProviderForm } from "./external-provider-form"
 import { ProviderForm } from "./provider-form"
 
@@ -13,6 +13,8 @@ export function ProvidersPage() {
   const [data, { refetch }] = createResource<ProviderListResult>(async () => {
     return (await rpc().list({})) as ProviderListResult
   })
+
+  const [importing, setImporting] = createSignal(false)
 
   const openForm = (editing?: StoredProvider) => {
     const taken = new Set<string>(data()?.existingProviderIDs ?? [])
@@ -95,14 +97,87 @@ export function ProvidersPage() {
   const kindLabel = (kind: ExternalProvider["kind"]) =>
     t(kind === "custom" ? "provider.list.kind.custom" : "provider.list.kind.builtin")
 
+  const importFromFile = async () => {
+    if (!ctx.desktop) {
+      ctx.toast.show({ variant: "error", title: t("provider.import.webUnavailable") })
+      return
+    }
+    if (importing()) return
+    setImporting(true)
+    try {
+      const picked = await ctx.desktop.pick({
+        extensions: ["json", "txt"],
+        multiple: true,
+        title: t("provider.import.pickTitle"),
+      })
+      if (!picked || picked.length === 0) return
+      const result = (await rpc().importProviders({ paths: [...picked] })) as ImportResult
+
+      const total = result.added.length + result.updated.length + result.overridden.length
+      if (total > 0) {
+        const detailParts: string[] = [
+          t("provider.import.success.description", {
+            added: result.added.length,
+            updated: result.updated.length,
+            overridden: result.overridden.length,
+          }),
+        ]
+        if (result.skipped.length > 0)
+          detailParts.push(t("provider.import.skipped", { count: result.skipped.length }))
+        if (result.errors.length > 0)
+          detailParts.push(t("provider.import.failedFiles", { count: result.errors.length }))
+        ctx.toast.show({
+          variant: "success",
+          title: t("provider.import.success.title", { count: total }),
+          description: detailParts.join(" "),
+        })
+      } else if (result.errors.length > 0 || result.skipped.length > 0) {
+        const lines = [
+          ...result.errors,
+          ...result.skipped.map((skip) => `${skip.id}: ${skip.reason}`),
+        ]
+        ctx.toast.show({
+          variant: "error",
+          title: t("provider.import.error.title"),
+          description: lines.join("\n"),
+        })
+      } else {
+        ctx.toast.show({
+          variant: "default",
+          title: t("provider.import.empty.title"),
+          description: t("provider.import.empty.description"),
+        })
+      }
+      void refetch()
+    } catch (err) {
+      ctx.toast.show({
+        variant: "error",
+        title: t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <ctx.ui.SettingsLayout
       title={t("settings.providers.title")}
       description={t("settings.providers.description")}
       actions={
-        <ctx.ui.Button variant="contrast" icon="plus-small" onClick={() => openForm()}>
-          {t("provider.list.add")}
-        </ctx.ui.Button>
+        <>
+          <ctx.ui.Button variant="contrast" icon="plus-small" onClick={() => openForm()}>
+            {t("provider.list.add")}
+          </ctx.ui.Button>
+          <ctx.ui.Button
+            variant="neutral"
+            icon="open-file"
+            busy={importing()}
+            onClick={() => void importFromFile()}
+          >
+            {t("provider.import.button")}
+          </ctx.ui.Button>
+        </>
       }
     >
       <Show when={!data.loading} fallback={<ctx.ui.Loader size="large" class="wm-loader" />}>

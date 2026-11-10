@@ -1,7 +1,15 @@
+import { readFile } from "node:fs/promises"
 import { Model, Plugin, Provider } from "@opencode/plugin"
 import type { Schema } from "effect"
 import { ProviderRpc } from "./rpc"
-import type { ExternalProvider, ExternalProviderKind, ProviderOverride, StoredProvider } from "./types"
+import type {
+  ExternalProvider,
+  ExternalProviderKind,
+  ImportResult,
+  ProviderOverride,
+  StoredModel,
+  StoredProvider,
+} from "./types"
 
 const STORAGE_KEY = "providers"
 const OVERRIDES_KEY = "overrides"
@@ -70,6 +78,73 @@ function serializeExternal(
     modelCount: record.models.size,
     overridden,
   }
+}
+
+// --- Bulk import from a .json / .txt file ---
+
+/** Parses file text into a list of raw provider objects. Accepts a JSON array or a single object. */
+function parseProviderFile(text: string): unknown[] {
+  const trimmed = text.trim()
+  if (!trimmed) return []
+  const data = JSON.parse(trimmed)
+  if (Array.isArray(data)) return data
+  if (data && typeof data === "object") return [data]
+  throw new Error("expected a JSON array or object")
+}
+
+/** Normalizes one parsed entry into a `StoredProvider`; returns null when it lacks a valid id or name. */
+function normalizeImportedProvider(raw: unknown): StoredProvider | null {
+  if (!raw || typeof raw !== "object") return null
+  const obj = raw as Record<string, unknown>
+  const id = typeof obj.id === "string" ? obj.id.trim() : ""
+  const name = typeof obj.name === "string" ? obj.name.trim() : ""
+  if (!id || !name) return null
+
+  const baseURL = typeof obj.baseURL === "string" ? obj.baseURL.trim() : ""
+  const apiKey = typeof obj.apiKey === "string" ? obj.apiKey : undefined
+
+  let headers: Record<string, string> | undefined
+  if (obj.headers && typeof obj.headers === "object" && !Array.isArray(obj.headers)) {
+    const entries: Record<string, string> = {}
+    for (const [key, value] of Object.entries(obj.headers as Record<string, unknown>)) {
+      const headerKey = typeof key === "string" ? key.trim() : ""
+      if (headerKey && typeof value === "string" && value.trim()) entries[headerKey] = value.trim()
+    }
+    if (Object.keys(entries).length > 0) headers = entries
+  }
+
+  let models: StoredModel[] = []
+  if (Array.isArray(obj.models)) {
+    models = obj.models
+      .filter((model): model is Record<string, unknown> => !!model && typeof model === "object")
+      .map((model) => ({
+        id: typeof model.id === "string" ? model.id.trim() : "",
+        name: typeof model.name === "string" ? model.name.trim() : "",
+      }))
+      .filter((model) => model.id && model.name)
+  }
+
+  return {
+    id,
+    name,
+    baseURL,
+    ...(apiKey ? { apiKey } : {}),
+    ...(headers ? { headers } : {}),
+    models,
+  }
+}
+
+/**
+ * Builds a `ProviderOverride` from an imported provider. Overrides only carry the
+ * editable surface (name/baseURL/apiKey/headers) and omit empty fields so the
+ * provider's own values stay untouched.
+ */
+function toProviderOverride(item: StoredProvider): ProviderOverride {
+  const override: ProviderOverride = { id: item.id, name: item.name }
+  if (item.baseURL) override.baseURL = item.baseURL
+  if (item.apiKey) override.apiKey = item.apiKey
+  if (item.headers && Object.keys(item.headers).length > 0) override.headers = item.headers
+  return override
 }
 
 export default Plugin.define({
@@ -187,6 +262,66 @@ export default Plugin.define({
         await registerOverrides()
         await ctx.provider.reload()
         return {}
+      },
+      async importProviders(input) {
+        const { paths } = input as { paths: string[] }
+        // Refresh the external-provider snapshot so id classification is current.
+        await registerOverrides()
+
+        const result: ImportResult = { added: [], updated: [], overridden: [], skipped: [], errors: [] }
+        const pluginIDs = new Set(providers.map((provider) => provider.id))
+        const externalIDs = new Set(existingProviderIDs)
+        let providersChanged = false
+        let overridesChanged = false
+
+        for (const path of paths) {
+          let rawItems: unknown[]
+          try {
+            rawItems = parseProviderFile(await readFile(path, "utf8"))
+          } catch (err) {
+            result.errors.push(`${path}: ${err instanceof Error ? err.message : String(err)}`)
+            continue
+          }
+
+          for (const raw of rawItems) {
+            const item = normalizeImportedProvider(raw)
+            if (!item) {
+              const rawID =
+                raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).id === "string"
+                  ? ((raw as Record<string, unknown>).id as string)
+                  : ""
+              result.skipped.push({ id: rawID || "(unknown)", reason: "missing id or name" })
+              continue
+            }
+
+            if (pluginIDs.has(item.id)) {
+              // Plugin-stored: full replace, models included.
+              const index = providers.findIndex((provider) => provider.id === item.id)
+              providers[index] = item
+              result.updated.push(item.id)
+              providersChanged = true
+            } else if (externalIDs.has(item.id)) {
+              // External (config/custom/builtin): override editable fields only.
+              overrides = { ...overrides, [item.id]: toProviderOverride(item) }
+              result.overridden.push(item.id)
+              overridesChanged = true
+            } else {
+              providers.push(item)
+              pluginIDs.add(item.id)
+              result.added.push(item.id)
+              providersChanged = true
+            }
+          }
+        }
+
+        if (providersChanged) await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
+        if (overridesChanged) await persistOverrides()
+        if (providersChanged || overridesChanged) {
+          await registerOverrides()
+          await ctx.provider.reload()
+        }
+
+        return result
       },
     })
 

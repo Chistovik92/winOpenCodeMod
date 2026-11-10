@@ -60,3 +60,17 @@ export interface ProviderListResult {
   /** Provider IDs that exist outside this plugin (used for ID collision checks). */
   existingProviderIDs: string[]
 }
+
+/** Summary of a bulk provider import from a `.json`/`.txt` file. */
+export interface ImportResult {
+  /** IDs added as new plugin-stored providers. */
+  added: string[]
+  /** IDs of plugin-stored providers that were fully replaced. */
+  updated: string[]
+  /** IDs of external (config/custom/builtin) providers that got an override. */
+  overridden: string[]
+  /** Items that could not be imported, with a short reason. */
+  skipped: { id: string; reason: string }[]
+  /** File-level failures (read or parse errors), with the offending path. */
+  errors: string[]
+}

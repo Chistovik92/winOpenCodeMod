@@ -56,6 +56,28 @@ const emptySchema = {
   additionalProperties: false,
 }
 
+const importResultSchema = {
+  type: "object",
+  properties: {
+    added: { type: "array", items: { type: "string" } },
+    updated: { type: "array", items: { type: "string" } },
+    overridden: { type: "array", items: { type: "string" } },
+    skipped: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          reason: { type: "string" },
+        },
+        required: ["id", "reason"],
+      },
+    },
+    errors: { type: "array", items: { type: "string" } },
+  },
+  required: ["added", "updated", "overridden", "skipped", "errors"],
+}
+
 /**
  * The plugin's RPC contract, shared by the server (`ctx.rpc.register`) and the
  * GUI (`ctx.client.rpc`). `as const satisfies` keeps the method names literal
@@ -100,6 +122,16 @@ export const ProviderRpc = {
         required: ["id"],
       },
       output: emptySchema,
+    },
+    importProviders: {
+      input: {
+        type: "object",
+        properties: {
+          paths: { type: "array", items: { type: "string" } },
+        },
+        required: ["paths"],
+      },
+      output: importResultSchema,
     },
   },
   events: {},
