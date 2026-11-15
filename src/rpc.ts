@@ -4,9 +4,9 @@ const modelSchema = {
   type: "object",
   properties: {
     id: { type: "string" },
-    name: { type: "string" },
+    name: { type: "string" }
   },
-  required: ["id", "name"],
+  required: ["id", "name"]
 }
 
 const providerSchema = {
@@ -17,9 +17,9 @@ const providerSchema = {
     baseURL: { type: "string" },
     apiKey: { type: "string" },
     headers: { type: "object", additionalProperties: { type: "string" } },
-    models: { type: "array", items: modelSchema },
+    models: { type: "array", items: modelSchema }
   },
-  required: ["id", "name", "baseURL", "models"],
+  required: ["id", "name", "baseURL", "models"]
 }
 
 const externalProviderSchema = {
@@ -33,9 +33,9 @@ const externalProviderSchema = {
     apiKey: { type: "string" },
     headers: { type: "object", additionalProperties: { type: "string" } },
     modelCount: { type: "number" },
-    overridden: { type: "boolean" },
+    overridden: { type: "boolean" }
   },
-  required: ["id", "name", "kind", "package", "modelCount", "overridden"],
+  required: ["id", "name", "kind", "package", "modelCount", "overridden"]
 }
 
 const overrideSchema = {
@@ -45,15 +45,15 @@ const overrideSchema = {
     name: { type: "string" },
     baseURL: { type: "string" },
     apiKey: { type: "string" },
-    headers: { type: "object", additionalProperties: { type: "string" } },
+    headers: { type: "object", additionalProperties: { type: "string" } }
   },
-  required: ["id"],
+  required: ["id"]
 }
 
 const emptySchema = {
   type: "object",
   properties: {},
-  additionalProperties: false,
+  additionalProperties: false
 }
 
 const importResultSchema = {
@@ -68,22 +68,49 @@ const importResultSchema = {
         type: "object",
         properties: {
           id: { type: "string" },
-          reason: { type: "string" },
+          reason: { type: "string" }
         },
-        required: ["id", "reason"],
-      },
+        required: ["id", "reason"]
+      }
     },
-    errors: { type: "array", items: { type: "string" } },
+    errors: { type: "array", items: { type: "string" } }
   },
-  required: ["added", "updated", "overridden", "skipped", "errors"],
+  required: ["added", "updated", "overridden", "skipped", "errors"]
 }
 
-/**
- * The plugin's RPC contract, shared by the server (`ctx.rpc.register`) and the
- * GUI (`ctx.client.rpc`). `as const satisfies` keeps the method names literal
- * so both sides stay typed; the JSON-schema input/output yield `unknown` at the
- * boundaries and are cast there.
- */
+const aiStarModelSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    display_name: { type: "string" },
+    context_window: { type: "string" },
+    multiplier: { type: "number" },
+    modalities: { type: "string" },
+    isNew: { type: "boolean" },
+    uptime: { type: "number" },
+    quality: { type: ["number", "null"] },
+    effort: { type: "array", items: { type: "string" } },
+    category: { type: "string" },
+    category_label: { type: "string" },
+    category_label_en: { type: "string" }
+  },
+  required: ["id", "display_name", "context_window", "multiplier", "modalities", "isNew", "uptime", "effort", "category", "category_label", "category_label_en"]
+}
+
+const aiStarActivateResponseSchema = {
+  type: "object",
+  properties: {
+    access_code: { type: "string" },
+    api_key: { type: "string" },
+    service: { type: "string" },
+    limit: { type: "number" },
+    used: { type: "number" },
+    activated_at: { type: "string" },
+    base_url: { type: "string" }
+  },
+  required: ["access_code", "api_key", "service", "limit", "used", "activated_at", "base_url"]
+}
+
 export const ProviderRpc = {
   id: "winopencodemod",
   methods: {
@@ -94,45 +121,19 @@ export const ProviderRpc = {
         properties: {
           providers: { type: "array", items: providerSchema },
           externalProviders: { type: "array", items: externalProviderSchema },
-          existingProviderIDs: { type: "array", items: { type: "string" } },
+          existingProviderIDs: { type: "array", items: { type: "string" } }
         },
-        required: ["providers", "externalProviders", "existingProviderIDs"],
-      },
+        required: ["providers", "externalProviders", "existingProviderIDs"]
+      }
     },
-    save: {
-      input: providerSchema,
-      output: emptySchema,
-    },
-    remove: {
-      input: {
-        type: "object",
-        properties: { id: { type: "string" } },
-        required: ["id"],
-      },
-      output: emptySchema,
-    },
-    saveOverride: {
-      input: overrideSchema,
-      output: emptySchema,
-    },
-    removeOverride: {
-      input: {
-        type: "object",
-        properties: { id: { type: "string" } },
-        required: ["id"],
-      },
-      output: emptySchema,
-    },
-    importProviders: {
-      input: {
-        type: "object",
-        properties: {
-          paths: { type: "array", items: { type: "string" } },
-        },
-        required: ["paths"],
-      },
-      output: importResultSchema,
-    },
+    save: { input: providerSchema, output: emptySchema },
+    remove: { input: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, output: emptySchema },
+    saveOverride: { input: overrideSchema, output: emptySchema },
+    removeOverride: { input: { type: "object", properties: { id: { type: "string" } }, required: ["id"] }, output: emptySchema },
+    importProviders: { input: { type: "object", properties: { paths: { type: "array", items: { type: "string" } } }, required: ["paths"] }, output: importResultSchema },
+    aiStarActivate: { input: { type: "object", properties: { accessCode: { type: "string" } }, required: ["accessCode"] }, output: aiStarActivateResponseSchema },
+    aiStarFetchModels: { input: { type: "object", properties: { apiKey: { type: "string" } }, required: ["apiKey"] }, output: { type: "object", properties: { models: { type: "array", items: aiStarModelSchema } }, required: ["models"] } },
+    aiStarFetchBootstrapModels: { input: emptySchema, output: { type: "object", properties: { models: { type: "array", items: aiStarModelSchema } }, required: ["models"] } }
   },
-  events: {},
+  events: {}
 } as const satisfies Rpc.PortableDefinition

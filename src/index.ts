@@ -10,6 +10,13 @@ import type {
   StoredModel,
   StoredProvider,
 } from "./types"
+import {
+  activateAccessCode,
+  fetchBootstrapModels,
+  fetchModelsWithApiKey,
+  convertToStoredModels,
+  getAIStarBaseURL,
+} from "./aistar"
 
 const STORAGE_KEY = "providers"
 const OVERRIDES_KEY = "overrides"
@@ -322,6 +329,20 @@ export default Plugin.define({
         }
 
         return result
+      },
+      async aiStarActivate(input) {
+        const { accessCode } = input as { accessCode: string }
+        const result = await activateAccessCode(accessCode)
+        return result
+      },
+      async aiStarFetchModels(input) {
+        const { apiKey } = input as { apiKey: string }
+        const models = await fetchModelsWithApiKey(apiKey)
+        return { models }
+      },
+      async aiStarFetchBootstrapModels() {
+        const models = await fetchBootstrapModels()
+        return { models }
       },
     })
 

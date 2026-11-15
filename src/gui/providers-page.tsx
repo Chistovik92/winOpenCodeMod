@@ -4,6 +4,7 @@ import { ProviderRpc } from "../rpc"
 import type { ExternalProvider, ImportResult, ProviderListResult, StoredProvider } from "../types"
 import { ExternalProviderForm } from "./external-provider-form"
 import { ProviderForm } from "./provider-form"
+import { AISTarActivationForm } from "./aistar-activation-form"
 
 export function ProvidersPage() {
   const ctx = usePlugin()
@@ -15,6 +16,7 @@ export function ProvidersPage() {
   })
 
   const [importing, setImporting] = createSignal(false)
+  const [aistarActivating, setAISTarActivating] = createSignal(false)
 
   const openForm = (editing?: StoredProvider) => {
     const taken = new Set<string>(data()?.existingProviderIDs ?? [])
@@ -36,6 +38,17 @@ export function ProvidersPage() {
     ctx.dialogs.open((dialog) => (
       <ExternalProviderForm
         provider={provider}
+        onDone={(saved) => {
+          dialog.close()
+          if (saved) void refetch()
+        }}
+      />
+    ))
+  }
+
+  const openAISTarActivation = () => {
+    ctx.dialogs.open((dialog) => (
+      <AISTarActivationForm
         onDone={(saved) => {
           dialog.close()
           if (saved) void refetch()
@@ -181,6 +194,14 @@ export function ProvidersPage() {
       }
     >
       <Show when={!data.loading} fallback={<ctx.ui.Loader size="large" class="wm-loader" />}>
+        <ctx.ui.SettingsSection title={t("aistar.section.title")}>
+          <div class="wm-aistar-section">
+            <ctx.ui.Button variant="contrast" icon="brain" onClick={openAISTarActivation} busy={aistarActivating()}>
+              {t("aistar.activate.button")}
+            </ctx.ui.Button>
+          </div>
+        </ctx.ui.SettingsSection>
+
         <ctx.ui.SettingsSection title={t("provider.list.section.custom")}>
           <Show
             when={(data()?.providers.length ?? 0) > 0}
@@ -225,8 +246,8 @@ export function ProvidersPage() {
                   description={
                     <span class="wm-row-desc">
                       {provider.id}
-                      {provider.baseURL ? ` · ${provider.baseURL}` : ""}
-                      {provider.overridden ? ` · ${t("provider.list.overridden")}` : ""}
+                      {provider.baseURL ? ` \u00b7 ${provider.baseURL}` : ""}
+                      {provider.overridden ? ` \u00b7 ${t("provider.list.overridden")}` : ""}
                     </span>
                   }
                 >
