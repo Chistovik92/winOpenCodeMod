@@ -1,7 +1,6 @@
 import { usePlugin } from "@opencode/plugin/gui"
 import { createSignal } from "solid-js"
 import { ProviderRpc } from "../rpc"
-import { validateAccessCode, activateAccessCode } from "../aistar"
 
 export function AISTarActivationForm(props: { onDone: (saved: boolean) => void }) {
   const ctx = usePlugin()
@@ -10,9 +9,13 @@ export function AISTarActivationForm(props: { onDone: (saved: boolean) => void }
   const [error, setError] = createSignal<string | null>(null)
   const [loading, setLoading] = createSignal(false)
 
+  const validateCode = (code: string): boolean => {
+    return /^[A-Z0-9]{16,20}$/.test(code)
+  }
+
   const handleActivate = async () => {
     const code = accessCode().trim().toUpperCase()
-    if (!validateAccessCode(code)) {
+    if (!validateCode(code)) {
       setError(t("aistar.activate.error.invalidCode"))
       return
     }
@@ -20,15 +23,27 @@ export function AISTarActivationForm(props: { onDone: (saved: boolean) => void }
     setLoading(true)
     setError(null)
     try {
-      const result = await activateAccessCode(code)
+      const rpc = ctx.client.rpc(ProviderRpc)
+      const result = await rpc.aiStarActivate({ accessCode: code })
       ctx.toast.show({
         variant: "success",
         title: t("aistar.activate.success.title"),
         description: t("aistar.activate.success.description"),
       })
       props.onDone(true)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
+    } catch (err: unknown) {
+      let message = "Unknown error"
+      if (err instanceof Error) {
+        message = err.message
+      } else if (typeof err === "object" && err !== null) {
+        const obj = err as Record<string, unknown>
+        if (typeof obj.message === "string") message = obj.message
+        else if (typeof obj.error === "string") message = obj.error
+        else if (typeof obj.error === "object" && obj.error !== null) {
+          const errObj = obj.error as Record<string, unknown>
+          if (typeof errObj.message === "string") message = errObj.message
+        }
+      }
       setError(t("aistar.activate.error.activationFailed", { message }))
       ctx.toast.show({
         variant: "error",

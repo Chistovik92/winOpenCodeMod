@@ -82,6 +82,10 @@ const css = `
   border: 1px solid currentColor;
   vertical-align: middle;
 }
+.wm-aistar-section {
+  display: flex;
+  gap: 8px;
+}
 `
 
 export default Plugin.define({

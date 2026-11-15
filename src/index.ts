@@ -332,8 +332,36 @@ export default Plugin.define({
       },
       async aiStarActivate(input) {
         const { accessCode } = input as { accessCode: string }
-        const result = await activateAccessCode(accessCode)
-        return result
+        try {
+          const result = await activateAccessCode(accessCode)
+
+          // Save or update the aistar provider with the new API key
+          const aistarProvider: StoredProvider = {
+            id: "aistar",
+            name: "AI Star",
+            baseURL: result.base_url || "https://ai.starimg.ru/v1",
+            apiKey: result.api_key,
+            models: [], // Will be populated when fetching models
+          }
+
+          const index = providers.findIndex((p) => p.id === "aistar")
+          if (index >= 0) {
+            // Update existing provider, keep existing models
+            const existing = providers[index]!
+            providers[index] = { ...existing, ...aistarProvider, models: existing.models }
+          } else {
+            providers.push(aistarProvider)
+          }
+          await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
+          await registerOverrides()
+          await ctx.provider.reload()
+
+          return result
+        } catch (err) {
+          // Re-throw with a serializable message
+          const msg = err instanceof Error ? err.message : String(err)
+          throw new Error(msg)
+        }
       },
       async aiStarFetchModels(input) {
         const { apiKey } = input as { apiKey: string }
@@ -343,6 +371,19 @@ export default Plugin.define({
       async aiStarFetchBootstrapModels() {
         const models = await fetchBootstrapModels()
         return { models }
+      },
+      async aiStarUpdateModels() {
+        const aistar = providers.find((p) => p.id === "aistar")
+        if (!aistar?.apiKey) {
+          throw new Error("AI Star provider not found or missing API key")
+        }
+        const models = await fetchModelsWithApiKey(aistar.apiKey)
+        const storedModels = convertToStoredModels(models)
+        aistar.models = storedModels
+        await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
+        await registerOverrides()
+        await ctx.provider.reload()
+        return { count: storedModels.length }
       },
     })
 

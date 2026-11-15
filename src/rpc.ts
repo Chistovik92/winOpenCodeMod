@@ -133,7 +133,8 @@ export const ProviderRpc = {
     importProviders: { input: { type: "object", properties: { paths: { type: "array", items: { type: "string" } } }, required: ["paths"] }, output: importResultSchema },
     aiStarActivate: { input: { type: "object", properties: { accessCode: { type: "string" } }, required: ["accessCode"] }, output: aiStarActivateResponseSchema },
     aiStarFetchModels: { input: { type: "object", properties: { apiKey: { type: "string" } }, required: ["apiKey"] }, output: { type: "object", properties: { models: { type: "array", items: aiStarModelSchema } }, required: ["models"] } },
-    aiStarFetchBootstrapModels: { input: emptySchema, output: { type: "object", properties: { models: { type: "array", items: aiStarModelSchema } }, required: ["models"] } }
+    aiStarFetchBootstrapModels: { input: emptySchema, output: { type: "object", properties: { models: { type: "array", items: aiStarModelSchema } }, required: ["models"] } },
+    aiStarUpdateModels: { input: emptySchema, output: { type: "object", properties: { count: { type: "number" } }, required: ["count"] } }
   },
   events: {}
 } as const satisfies Rpc.PortableDefinition

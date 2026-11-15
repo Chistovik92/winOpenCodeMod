@@ -17,6 +17,7 @@ export function ProvidersPage() {
 
   const [importing, setImporting] = createSignal(false)
   const [aistarActivating, setAISTarActivating] = createSignal(false)
+  const [aistarUpdating, setAISTarUpdating] = createSignal(false)
 
   const openForm = (editing?: StoredProvider) => {
     const taken = new Set<string>(data()?.existingProviderIDs ?? [])
@@ -55,6 +56,32 @@ export function ProvidersPage() {
         }}
       />
     ))
+  }
+
+  const updateAISTarModels = async () => {
+    if (aistarUpdating()) return
+    setAISTarUpdating(true)
+    try {
+      const result = (await rpc().aiStarUpdateModels({})) as { count: number }
+      ctx.toast.show({
+        variant: "success",
+        title: t("aistar.fetchModels.success", { count: result.count }),
+      })
+      void refetch()
+    } catch (err: unknown) {
+      let message = "Unknown error"
+      if (err instanceof Error) message = err.message
+      else if (typeof err === "object" && err !== null) {
+        const obj = err as Record<string, unknown>
+        if (typeof obj.message === "string") message = obj.message
+      }
+      ctx.toast.show({
+        variant: "error",
+        title: t("aistar.fetchModels.error", { message }),
+      })
+    } finally {
+      setAISTarUpdating(false)
+    }
   }
 
   const remove = async (provider: StoredProvider) => {
@@ -198,6 +225,9 @@ export function ProvidersPage() {
           <div class="wm-aistar-section">
             <ctx.ui.Button variant="contrast" icon="brain" onClick={openAISTarActivation} busy={aistarActivating()}>
               {t("aistar.activate.button")}
+            </ctx.ui.Button>
+            <ctx.ui.Button variant="neutral" icon="refresh" onClick={() => void updateAISTarModels()} busy={aistarUpdating()}>
+              {t("aistar.fetchModels.button")}
             </ctx.ui.Button>
           </div>
         </ctx.ui.SettingsSection>
