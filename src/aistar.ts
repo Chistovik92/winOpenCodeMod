@@ -49,7 +49,13 @@ export interface AIStarModelCatalog {
 }
 
 export interface AIStarBootstrap {
+  csrf?: string
   models: AIStarModelCategory[]
+  state?: {
+    activated?: boolean
+    err?: string
+    key?: AIStarActivationResponse
+  }
 }
 
 export interface AIStarActivationResponse {
@@ -69,16 +75,18 @@ export interface AIStarModelsResponse {
 /**
  * Extract bootstrap data from the AI Star HTML page
  */
+function readBootstrap(html: string): AIStarBootstrap {
+  const marker = "window.__STARIMG_BOOTSTRAP__="
+  const start = html.indexOf(marker)
+  const end = start < 0 ? -1 : html.indexOf(";</script>", start + marker.length)
+  if (start < 0 || end < 0) throw new Error("Could not find bootstrap data in AI Star page")
+  return JSON.parse(html.slice(start + marker.length, end)) as AIStarBootstrap
+}
+
 export async function fetchBootstrapModels(): Promise<AIStarModel[]> {
   const response = await fetch(AI_STAR_BASE_URL)
   const html = await response.text()
-
-  const match = html.match(/window\.__STARIMG_BOOTSTRAP__=({.*?});/)
-  if (!match) {
-    throw new Error("Could not find bootstrap data in AI Star page")
-  }
-
-  const bootstrap: AIStarBootstrap = JSON.parse(match[1]!)
+  const bootstrap = readBootstrap(html)
   const allModels: AIStarModel[] = []
 
   for (const category of bootstrap.models) {
@@ -100,33 +108,33 @@ export async function fetchBootstrapModels(): Promise<AIStarModel[]> {
  * This mimics the browser activation flow
  */
 export async function activateAccessCode(accessCode: string): Promise<AIStarActivationResponse> {
-  // First, get CSRF token from the bootstrap
   const response = await fetch(AI_STAR_BASE_URL)
-  const html = await response.text()
+  const bootstrap = readBootstrap(await response.text())
+  if (!bootstrap.csrf) throw new Error("Could not extract CSRF token from AI Star page")
+  const csrfCookie = response.headers.get("set-cookie")?.split(";", 1)[0]
 
-  const csrfMatch = html.match(/"csrf":"([^"]+)"/)
-  const csrf = csrfMatch?.[1]
-
-  if (!csrf) {
-    throw new Error("Could not extract CSRF token from AI Star page")
-  }
-
-  // Try the activation endpoint
-  const activateResponse = await fetch(`${AI_STAR_API_BASE}/api/activate`, {
+  // The public site activates through its root form and returns a fresh HTML
+  // bootstrap containing the customer key; there is no /api/activate endpoint.
+  const activateResponse = await fetch(AI_STAR_BASE_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json",
-      "X-CSRF-Token": csrf!,
+      "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+      ...(csrfCookie ? { Cookie: csrfCookie } : {}),
     },
-    body: JSON.stringify({ code: accessCode }),
+    body: new URLSearchParams({
+      csrf_token: bootstrap.csrf,
+      lang: "en",
+      access_code: accessCode,
+    }).toString(),
   })
-
-  if (!activateResponse.ok) {
-    const errorText = await activateResponse.text()
-    throw new Error(`Activation failed: ${activateResponse.status} ${errorText}`)
+  const activated = readBootstrap(await activateResponse.text())
+  const key = activated.state?.key
+  if (!activateResponse.ok || activated.state?.err || !key?.api_key) {
+    throw new Error(activated.state?.err || `Activation failed: ${activateResponse.status}`)
   }
 
-  return await activateResponse.json() as AIStarActivationResponse
+  const baseURL = (key.base_url || AI_STAR_BASE_URL).replace(/\/+$/, "")
+  return { ...key, access_code: key.access_code || accessCode, base_url: baseURL.endsWith("/v1") ? baseURL : `${baseURL}/v1` }
 }
 
 /**

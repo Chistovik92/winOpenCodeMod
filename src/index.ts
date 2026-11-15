@@ -213,6 +213,9 @@ export default Plugin.define({
               }
               if (override.headers !== undefined) target.headers = override.headers
             })
+            if (override.models !== undefined) {
+              editor.models.set(id, toModels({ id, name: "", baseURL: "", models: override.models }))
+            }
           }
 
           externalProviders = editor
@@ -250,7 +253,8 @@ export default Plugin.define({
       },
       async saveOverride(input) {
         const override = input as ProviderOverride
-        overrides = { ...overrides, [override.id]: override }
+        const models = overrides[override.id]?.models
+        overrides = { ...overrides, [override.id]: { ...override, ...(models ? { models } : {}) } }
         await persistOverrides()
         await registerOverrides()
         await ctx.provider.reload()
@@ -335,24 +339,30 @@ export default Plugin.define({
         try {
           const result = await activateAccessCode(accessCode)
 
-          // Save or update the aistar provider with the new API key
-          const aistarProvider: StoredProvider = {
-            id: "aistar",
-            name: "AI Star",
-            baseURL: result.base_url || "https://ai.starimg.ru/v1",
-            apiKey: result.api_key,
-            models: [], // Will be populated when fetching models
-          }
-
           const index = providers.findIndex((p) => p.id === "aistar")
           if (index >= 0) {
-            // Update existing provider, keep existing models
+            // Update plugin-owned AI Star without discarding its model list.
             const existing = providers[index]!
-            providers[index] = { ...existing, ...aistarProvider, models: existing.models }
+            providers[index] = { ...existing, name: "AI Star", baseURL: result.base_url, apiKey: result.api_key }
+            await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
           } else {
-            providers.push(aistarProvider)
+            await registerOverrides()
+            if (existingProviderIDs.includes("aistar")) {
+              // AI Star already lives in opencode.json: update it in place through
+              // an override rather than adding a second provider with the same id.
+              overrides.aistar = {
+                ...overrides.aistar,
+                id: "aistar",
+                name: "AI Star",
+                baseURL: result.base_url,
+                apiKey: result.api_key,
+              }
+              await persistOverrides()
+            } else {
+              providers.push({ id: "aistar", name: "AI Star", baseURL: result.base_url, apiKey: result.api_key, models: [] })
+              await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
+            }
           }
-          await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
           await registerOverrides()
           await ctx.provider.reload()
 
@@ -373,14 +383,23 @@ export default Plugin.define({
         return { models }
       },
       async aiStarUpdateModels() {
+        await registerOverrides()
         const aistar = providers.find((p) => p.id === "aistar")
-        if (!aistar?.apiKey) {
-          throw new Error("AI Star provider not found or missing API key")
+        const external = externalProviders.find((p) => p.id === "aistar")
+        const rawKey = aistar?.apiKey || overrides.aistar?.apiKey || external?.apiKey
+        const apiKey = resolveApiKey(rawKey)
+        if (!apiKey) throw new Error("AI Star provider not found or missing API key")
+
+        const storedModels = convertToStoredModels(await fetchModelsWithApiKey(apiKey))
+        if (aistar) {
+          aistar.models = storedModels
+          await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
+        } else if (external) {
+          overrides.aistar = { ...overrides.aistar, id: "aistar", models: storedModels }
+          await persistOverrides()
+        } else {
+          throw new Error("AI Star provider not found")
         }
-        const models = await fetchModelsWithApiKey(aistar.apiKey)
-        const storedModels = convertToStoredModels(models)
-        aistar.models = storedModels
-        await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
         await registerOverrides()
         await ctx.provider.reload()
         return { count: storedModels.length }

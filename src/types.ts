@@ -51,6 +51,8 @@ export interface ProviderOverride {
   /** Raw API key: literal, `{env:VAR}`, or empty. */
   apiKey?: string
   headers?: Record<string, string>
+  /** Optional model inventory replacement, used by AI Star's refresh action. */
+  models?: StoredModel[]
 }
 
 export interface ProviderListResult {

@@ -45,7 +45,8 @@ const overrideSchema = {
     name: { type: "string" },
     baseURL: { type: "string" },
     apiKey: { type: "string" },
-    headers: { type: "object", additionalProperties: { type: "string" } }
+    headers: { type: "object", additionalProperties: { type: "string" } },
+    models: { type: "array", items: modelSchema }
   },
   required: ["id"]
 }
