@@ -17,6 +17,7 @@ import {
   convertToStoredModels,
   getAIStarBaseURL,
 } from "./aistar"
+import { writeAISTarToConfig, removeAISTarModelsFromConfig } from "./config-file"
 
 const STORAGE_KEY = "providers"
 const OVERRIDES_KEY = "overrides"
@@ -189,6 +190,28 @@ export default Plugin.define({
     // which run after activation has settled. Disposing any prior registration before
     // re-adding keeps it last in the transform order, self-healing a cold-start timer
     // that landed too early.
+    // Resolve the runtime provider id that an override key refers to. Config-added
+    // `openai-compatible` providers normally keep their config key as their runtime id,
+    // but as a safety net we also match by `settings.provider` (the aisdk→native
+    // identity marker) and by display name, so an override never silently misses its
+    // provider when the id is spelled differently.
+    const resolveRuntimeID = (
+      editor: {
+        get: (id: string) => { provider: Provider.Info } | undefined
+        list: () => readonly { provider: Provider.Info }[]
+      },
+      key: string,
+    ): string | undefined => {
+      if (editor.get(key)) return key
+      const records = editor.list()
+      for (const record of records) {
+        const settings = record.provider.settings as Record<string, unknown> | undefined
+        if (typeof settings?.provider === "string" && settings.provider === key) return record.provider.id
+        if (record.provider.name === key) return record.provider.id
+      }
+      return undefined
+    }
+
     let overridesRegistration: { dispose: () => Promise<void> } | undefined
     let registerChain: Promise<void> = Promise.resolve()
     const registerOverrides = () => {
@@ -197,8 +220,9 @@ export default Plugin.define({
         overridesRegistration = await ctx.provider.transform((editor) => {
           const pluginIDs = new Set(providers.map((provider) => provider.id))
 
-          for (const [id, override] of Object.entries(overrides)) {
-            if (!editor.get(id)) continue
+          for (const [key, override] of Object.entries(overrides)) {
+            const id = resolveRuntimeID(editor, key)
+            if (!id) continue
             editor.update(id, (info) => {
               const target = info as unknown as {
                 name: string
@@ -339,27 +363,56 @@ export default Plugin.define({
         try {
           const result = await activateAccessCode(accessCode)
 
+          // Pull the fresh catalog with the new key so the existing profile gets
+          // its models updated in the same step. Best-effort: never block activation
+          // on a transient models fetch.
+          let models: StoredModel[] = []
+          try {
+            models = convertToStoredModels(await fetchModelsWithApiKey(result.api_key))
+          } catch {
+            models = []
+          }
+
           const index = providers.findIndex((p) => p.id === "aistar")
           if (index >= 0) {
-            // Update plugin-owned AI Star without discarding its model list.
+            // Update the plugin-owned AI Star in place, keeping its id and
+            // replacing baseURL/apiKey/models with the freshly activated values.
             const existing = providers[index]!
-            providers[index] = { ...existing, name: "AI Star", baseURL: result.base_url, apiKey: result.api_key }
+            providers[index] = {
+              ...existing,
+              name: "AI Star",
+              baseURL: result.base_url,
+              apiKey: result.api_key,
+              ...(models.length > 0 ? { models } : {}),
+            }
             await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
           } else {
+            // Refresh the external snapshot so we can reliably detect an AI Star
+            // that already lives in the user's config (opencode.jsonc).
             await registerOverrides()
-            if (existingProviderIDs.includes("aistar")) {
+            const runtimeID = existingProviderIDs.includes("aistar") ? "aistar" : undefined
+            if (runtimeID) {
               // AI Star already lives in opencode.json: update it in place through
               // an override rather than adding a second provider with the same id.
-              overrides.aistar = {
-                ...overrides.aistar,
+              // Carrying `models` ensures the existing profile's model list is
+              // refreshed too, not just name/baseURL/apiKey.
+              overrides[runtimeID] = {
+                ...overrides[runtimeID],
+                id: runtimeID,
+                name: "AI Star",
+                baseURL: result.base_url,
+                apiKey: result.api_key,
+                ...(models.length > 0 ? { models } : {}),
+              }
+              await persistOverrides()
+            } else {
+              providers.push({
                 id: "aistar",
                 name: "AI Star",
                 baseURL: result.base_url,
                 apiKey: result.api_key,
-              }
-              await persistOverrides()
-            } else {
-              providers.push({ id: "aistar", name: "AI Star", baseURL: result.base_url, apiKey: result.api_key, models: [] })
+                models,
+              })
               await ctx.storage.set(STORAGE_KEY, providers as unknown as Schema.Json)
             }
           }
@@ -403,6 +456,23 @@ export default Plugin.define({
         await registerOverrides()
         await ctx.provider.reload()
         return { count: storedModels.length }
+      },
+      async aiStarWriteToConfig() {
+        // Collect the effective AI Star data: plugin storage wins, then the override,
+        // then the external (config) provider snapshot.
+        await registerOverrides()
+        const aistar = providers.find((p) => p.id === "aistar")
+        const external = externalProviders.find((p) => p.id === "aistar")
+        const baseURL = aistar?.baseURL || overrides.aistar?.baseURL || external?.baseURL || ""
+        const apiKey = aistar?.apiKey || overrides.aistar?.apiKey || external?.apiKey
+        const models = aistar?.models ?? overrides.aistar?.models ?? []
+
+        if (!baseURL) throw new Error("AI Star base URL not found. Activate AI Star first.")
+
+        return writeAISTarToConfig("AI Star", baseURL, apiKey, models)
+      },
+      async aiStarRemoveHardcodedModels() {
+        return removeAISTarModelsFromConfig()
       },
     })
 

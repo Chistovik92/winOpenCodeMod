@@ -98,6 +98,25 @@ const aiStarModelSchema = {
   required: ["id", "display_name", "context_window", "multiplier", "modalities", "isNew", "uptime", "effort", "category", "category_label", "category_label_en"]
 }
 
+const writeConfigResultSchema = {
+  type: "object",
+  properties: {
+    path: { type: "string" },
+    updated: { type: "boolean" },
+    replaced: { type: "boolean" }
+  },
+  required: ["path", "updated", "replaced"]
+}
+
+const removeModelsResultSchema = {
+  type: "object",
+  properties: {
+    path: { type: "string" },
+    removed: { type: "boolean" }
+  },
+  required: ["path", "removed"]
+}
+
 const aiStarActivateResponseSchema = {
   type: "object",
   properties: {
@@ -135,7 +154,9 @@ export const ProviderRpc = {
     aiStarActivate: { input: { type: "object", properties: { accessCode: { type: "string" } }, required: ["accessCode"] }, output: aiStarActivateResponseSchema },
     aiStarFetchModels: { input: { type: "object", properties: { apiKey: { type: "string" } }, required: ["apiKey"] }, output: { type: "object", properties: { models: { type: "array", items: aiStarModelSchema } }, required: ["models"] } },
     aiStarFetchBootstrapModels: { input: emptySchema, output: { type: "object", properties: { models: { type: "array", items: aiStarModelSchema } }, required: ["models"] } },
-    aiStarUpdateModels: { input: emptySchema, output: { type: "object", properties: { count: { type: "number" } }, required: ["count"] } }
+    aiStarUpdateModels: { input: emptySchema, output: { type: "object", properties: { count: { type: "number" } }, required: ["count"] } },
+    aiStarWriteToConfig: { input: emptySchema, output: writeConfigResultSchema },
+    aiStarRemoveHardcodedModels: { input: emptySchema, output: removeModelsResultSchema }
   },
   events: {}
 } as const satisfies Rpc.PortableDefinition

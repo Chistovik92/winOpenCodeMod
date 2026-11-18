@@ -18,6 +18,8 @@ export function ProvidersPage() {
   const [importing, setImporting] = createSignal(false)
   const [aistarActivating, setAISTarActivating] = createSignal(false)
   const [aistarUpdating, setAISTarUpdating] = createSignal(false)
+  const [aistarWriting, setAISTarWriting] = createSignal(false)
+  const [aistarRemovingModels, setAISTarRemovingModels] = createSignal(false)
 
   const openForm = (editing?: StoredProvider) => {
     const taken = new Set<string>(data()?.existingProviderIDs ?? [])
@@ -81,6 +83,53 @@ export function ProvidersPage() {
       })
     } finally {
       setAISTarUpdating(false)
+    }
+  }
+
+  const writeAISTarToConfig = async () => {
+    if (aistarWriting()) return
+    setAISTarWriting(true)
+    try {
+      const result = (await rpc().aiStarWriteToConfig({})) as { path: string; updated: boolean; replaced: boolean }
+      ctx.toast.show({
+        variant: "success",
+        title: t("aistar.writeToConfig.success"),
+        description: result.replaced
+          ? t("aistar.writeToConfig.success.replaced", { path: result.path })
+          : t("aistar.writeToConfig.success.created", { path: result.path }),
+      })
+    } catch (err) {
+      ctx.toast.show({
+        variant: "error",
+        title: t("aistar.writeToConfig.error"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setAISTarWriting(false)
+    }
+  }
+
+  const removeAISTarHardcodedModels = async () => {
+    if (aistarRemovingModels()) return
+    setAISTarRemovingModels(true)
+    try {
+      const result = (await rpc().aiStarRemoveHardcodedModels({})) as { path: string; removed: boolean }
+      ctx.toast.show({
+        variant: "success",
+        title: t("aistar.removeModels.success"),
+        description: result.removed
+          ? t("aistar.removeModels.success.removed", { path: result.path })
+          : t("aistar.removeModels.success.none", { path: result.path }),
+      })
+      void refetch()
+    } catch (err) {
+      ctx.toast.show({
+        variant: "error",
+        title: t("aistar.removeModels.error"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setAISTarRemovingModels(false)
     }
   }
 
@@ -228,6 +277,17 @@ export function ProvidersPage() {
             </ctx.ui.Button>
             <ctx.ui.Button variant="neutral" icon="refresh" onClick={() => void updateAISTarModels()} busy={aistarUpdating()}>
               {t("aistar.fetchModels.button")}
+            </ctx.ui.Button>
+            <ctx.ui.Button variant="neutral" icon="open-file" onClick={() => void writeAISTarToConfig()} busy={aistarWriting()}>
+              {t("aistar.writeToConfig.button")}
+            </ctx.ui.Button>
+            <ctx.ui.Button
+              variant="neutral"
+              icon="trash"
+              onClick={() => void removeAISTarHardcodedModels()}
+              busy={aistarRemovingModels()}
+            >
+              {t("aistar.removeModels.button")}
             </ctx.ui.Button>
           </div>
         </ctx.ui.SettingsSection>
